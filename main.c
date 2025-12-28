@@ -24,7 +24,6 @@ void sigchld_handler(int signo) {
 	int stat;
 	//process child changes
 	while((pid = waitpid(-1, &stat, WNOHANG)) > 0) {
-		//printf("PID %d has terminated with status %d.\n", pid, WEXITSTATUS(stat));
 		for(int i = 0; i < numChildren; ++i) {
 			if(childPIDs[i] == pid) {
 				childPIDs[i] = -1;
@@ -124,13 +123,15 @@ int main(int argc, char** argv) {
 		CRASH_CALL(pipe(pipefd) == -1, "pipe", S__LINE__, 5);
 		CRASH_CALL((ret = fork()) < 0, "fork", S__LINE__, 5);
 		if(ret == 0) {
-			close(pipefd[1]);
+			//if child close write end of pipe and exec command
+			CRASH_CALL(close(pipefd[1]) == -1, "close", S__LINE__, 5);
 			CRASH_CALL(dup2(pipefd[0], STDIN_FILENO) == -1, "dup2", S__LINE__, 5);
 			CRASH_CALL(execl("/bin/bash", "bash", "-c", argv[optind+i], NULL) == -1,"execl", S__LINE__, 5);
 		} else if(ret > 0){
+			//if parent close read end of pipe and record pipefd and child PID
+			CRASH_CALL(close(pipefd[0]) == -1, "close", S__LINE__, 5);
 			outputFDs[i] = pipefd[1];
 			childPIDs[i] = ret;
-			CRASH_CALL(close(pipefd[0]) == -1, "close", S__LINE__, 5);
 		}
 	}
 	CRASH_CALL(usleep(upDelay) == -1, "usleep", S__LINE__, 5);
@@ -141,37 +142,40 @@ int main(int argc, char** argv) {
 	size_t inputSize = 0;
 	while(deadChildren < numChildren) {
 		if (getdelim(&line, &size, delim, stdin) == -1) {
+			//if input reading failed due to EOF terminate normally, otherwise print error
 			if(feof(stdin)) {
 				break;
 			}
-			perror("failed to read line ffd");
+			perror("failed to read input ffd");
 			break;
 		} else {
 			char* substr = strstr(line, selectorSeparator);
-			if(substr == NULL) {
+			if(substr == NULL) { //if unable to find selector separator input is of invalid form, print error and some information for user
 				fprintf(stderr, "input of:\n%s\n", line);
 				fprintf(stderr, "invalid input format, input: [SELECTOR NUMBER][SELECTOR SEPARATOR][INPUT][INPUT DELIMITER]\n");
 				break;
-			} else {
+			} else { //otherwise convert selector to number, and find input
 				substr[0] = '\0';
 				input = substr+1;
 				inputSize = strlen(input);
 				int selector = atoi(line);
-				if(selector < 0 || selector > numChildren-1) {
+				if(selector < 0 || selector > numChildren-1) { //if selector is out of range print error and some information for user
 					fprintf(stderr, "input of:\n%s\n", line);
 					fprintf(stderr, "invalid input format, selector out of range input: [SELECTOR NUMBER][SELECTOR SEPARATOR][INPUT][INPUT DELIMITER]\n");
 					break;
 				}
-				if(childPIDs[selector] == -1) {
+				if(childPIDs[selector] == -1) { //if child process the FD is meant to go to is dead then close the FD
 					CRASH_CALL(close(outputFDs[selector]) == -1, "close", S__LINE__, 5);
 					continue;
 				}
+				//otherwise write to FD and sleep for delay time
 				CRASH_CALL(write(outputFDs[selector], input, inputSize) == -1, "write", S__LINE__, 5);
 				CRASH_CALL(usleep(inputDelay) == -1, "usleep", S__LINE__, 5);
 			}
 		}
 	}
 	
+	//when terminating iterate over all FDs and children, and if not already dealt with close and kill them
 	for(int i = 0; i < numChildren; ++i) {
 		if(outputFDs[i] != -1) {
 			CRASH_CALL(close(outputFDs[i]) == -1, "close", S__LINE__, 5);
@@ -180,6 +184,7 @@ int main(int argc, char** argv) {
 			CRASH_CALL(kill(childPIDs[i], SIGTERM) == -1, "kill", S__LINE__, 5);
 		}
 	}
+	//free memory used to store FDs and child process PIDs
 	free(outputFDs);
 	free(childPIDs);
 }
