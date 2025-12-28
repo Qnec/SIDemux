@@ -60,7 +60,6 @@ int main(int argc, char** argv) {
 				printf("case 0\n");
 				break;
 			case 's':
-				//printf("case s %s\n", optarg);
 				if(strlen(optarg) == 1) {
 					selectorSeparator = optarg;
 				} else {
@@ -69,7 +68,6 @@ int main(int argc, char** argv) {
 				}
 				break;
 			case 'i':
-				//printf("case i %s\n", optarg);
 				if(strlen(optarg) == 1) {
 					delim = optarg[0];
 				} else {
@@ -78,7 +76,6 @@ int main(int argc, char** argv) {
 				}
 				break;
 			case 'u':
-				//printf("case i %s\n", optarg);
 				if(strlen(optarg) > 0) {
 					upDelay = (int)strtol(optarg, NULL, 10);
 					if(errno == ERANGE) {
@@ -90,7 +87,6 @@ int main(int argc, char** argv) {
 				}
 				break;
 			case 'd':
-				//printf("case i %s\n", optarg);
 				if(strlen(optarg) > 0) {
 					inputDelay = (int)strtol(optarg, NULL, 10);
 					if(errno == ERANGE) {
@@ -104,7 +100,6 @@ int main(int argc, char** argv) {
 			default:
 				print_usage();
 				return 2;
-				//printf("?? getopt returned character code 0%o ??\n", c);
 		}
 	}
 	
@@ -115,14 +110,13 @@ int main(int argc, char** argv) {
 	CRASH_CALL(sigaction(SIGCHLD, &act, NULL) == -1, "sigaction", S__LINE__, 5);
 	
 	//run shell commands and store write ends of pipes to shell commands' stdins
-	//printf("option index %d\n", optind);
 	int* outputFDs = malloc(sizeof(int)*(argc-optind));
 	CRASH_CALL(outputFDs == NULL, "malloc", S__LINE__, 5);
 	numChildren = (argc-optind);
 	childPIDs = malloc(sizeof(pid_t)*(argc-optind));
 	CRASH_CALL(childPIDs == NULL, "malloc", S__LINE__, 5);
 	
-	printf("example input for settings:\n%lu%s%s%c", numChildren-1, selectorSeparator, "input", delim);
+	fprintf(stderr, "example input for settings:\n%lu%s%s%c", numChildren-1, selectorSeparator, "input", delim);
 	
 	for(int i = 0; i < numChildren; ++i) {
 		int pipefd[2];
@@ -145,9 +139,7 @@ int main(int argc, char** argv) {
 	char* line = NULL;
 	size_t size = 0;
 	size_t inputSize = 0;
-	//size_t selectorSize = 0;
 	while(deadChildren < numChildren) {
-		//printf("reading input\n");
 		if (getdelim(&line, &size, delim, stdin) == -1) {
 			if(feof(stdin)) {
 				break;
@@ -157,31 +149,27 @@ int main(int argc, char** argv) {
 		} else {
 			char* substr = strstr(line, selectorSeparator);
 			if(substr == NULL) {
-				printf("input of:\n%s\n", line);
-				printf("invalid input format, input: [SELECTOR NUMBER][SELECTOR SEPARATOR][INPUT][INPUT DELIMITER]\n");
+				fprintf(stderr, "input of:\n%s\n", line);
+				fprintf(stderr, "invalid input format, input: [SELECTOR NUMBER][SELECTOR SEPARATOR][INPUT][INPUT DELIMITER]\n");
 				break;
 			} else {
 				substr[0] = '\0';
 				input = substr+1;
-				//selectorSize = strlen(line);
 				inputSize = strlen(input);
 				int selector = atoi(line);
-				//printf("Read selector %d input %.*s", atoi(line), inputSize, input);
 				if(selector < 0 || selector > numChildren-1) {
-					printf("input of:\n%s\n", line);
-					printf("invalid input format, selector out of range input: [SELECTOR NUMBER][SELECTOR SEPARATOR][INPUT][INPUT DELIMITER]\n");
+					fprintf(stderr, "input of:\n%s\n", line);
+					fprintf(stderr, "invalid input format, selector out of range input: [SELECTOR NUMBER][SELECTOR SEPARATOR][INPUT][INPUT DELIMITER]\n");
 					break;
 				}
 				if(childPIDs[selector] == -1) {
 					CRASH_CALL(close(outputFDs[selector]) == -1, "close", S__LINE__, 5);
-					//outputFDs[selector] == -1;
 					continue;
 				}
 				CRASH_CALL(write(outputFDs[selector], input, inputSize) == -1, "write", S__LINE__, 5);
 				CRASH_CALL(usleep(inputDelay) == -1, "usleep", S__LINE__, 5);
 			}
 		}
-		//printf("read an input\n");
 	}
 	
 	for(int i = 0; i < numChildren; ++i) {
