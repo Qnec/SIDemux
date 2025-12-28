@@ -39,7 +39,6 @@ output0.txt would end up with the contents
 line1
 line3
 line4
-line
 ```
 and output1.txt would end up with the contents
 ```
